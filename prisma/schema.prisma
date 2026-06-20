@@ -1,0 +1,497 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ------------------------------------------------------
+// 1. CORE USER MODELS
+// ------------------------------------------------------
+
+model User {
+  id                String    @id @default(uuid())
+  role              String // doctor, nursing, patient, pharmacy, admin, shipping_company
+  username          String
+  email             String    @unique
+  emailVerified     Boolean   @default(false)
+  verificationCode  String?
+  resetPasswordCode String?
+  phone             String    @unique
+  password          String
+  fcmTokens         String[]
+  nationalNumber    String?   @unique
+  avatar            String?   @default("https://icon-library.com/images/avatar-icon-images/avatar-icon-images-4.jpg")
+  personalPhoto     String[]  @default([])
+  coverPhoto        String?
+  address           String
+  country           String
+  description       String?
+  gender            String?
+  isPremium         Boolean   @default(false)
+  premiumExpiresAt  DateTime?
+
+  // Location
+  latitude  Float?
+  longitude Float?
+
+  // Transportation
+  hasVehicle         Boolean @default(false)
+  vehicleType        String? @default("none")
+  vehicleDescription String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relationships
+  wallet UserWallet?
+  kyc    UserKYC?
+
+  // Doctor/Nurse specifics
+  academicDegrees AcademicDegree[]
+
+  // Orders
+  patientOrders  ServiceOrder[] @relation("PatientOrders")
+  providerOrders ServiceOrder[] @relation("ProviderOrders")
+  orderOffers    OrderOffer[]
+
+  // Social
+  posts             Post[]
+  comments          Comment[]
+  postLikes         PostLike[]
+  commentLikes      CommentLike[]
+  friendRequestsSent Friendship[] @relation("Requester")
+  friendRequestsReceived Friendship[] @relation("Addressee")
+
+  // Chat
+  sentMessages     Message[]         @relation("Sender")
+  receivedMessages Message[]         @relation("Receiver")
+  medicalMessagesSent     MedicalMessage[] @relation("MedicalMsgSender")
+  medicalMessagesReceived MedicalMessage[] @relation("MedicalMsgReceiver")
+  chatParticipants ChatParticipant[]
+
+  // Ecommerce
+  products     Product[]
+  categories   Category[]
+  purchases    EcommerceOrder[]
+  pharmacyContracts        Contract[] @relation("ContractPharmacy")
+  shippingCompanyContracts Contract[] @relation("ContractShippingCompany")
+  initiatedContracts       Contract[] @relation("ContractInitiatedBy")
+  shippingDeliveries EcommerceOrder[] @relation("ShippingCompany")
+  pharmacyConversations  EcommerceConversation[] @relation("ConvPharmacy")
+  shippingConversations  EcommerceConversation[] @relation("ConvShipping")
+  ecommerceMessages      EcommerceMessage[]      @relation("EcommerceMsgSender")
+  knowledgeArticles      KnowledgeArticle[]
+  interestedIn       ServiceOrder[] @relation("InterestedProviders")
+  reviews      Review[] // Reviews given by this user
+  notifications Notification[]
+}
+
+model UserWallet {
+  id                        String    @id @default(uuid())
+  userId                    String    @unique
+  remainingAccount          Float     @default(0)
+  targetAccount             Float     @default(0)
+  commissionDebt            Float     @default(0)
+  commissionOperationCount  Int       @default(0)
+  lastCommissionPaymentDate DateTime?
+  wallet                    Float     @default(0)
+  balance                   Float     @default(0)
+  credits                   Float     @default(0)
+  freeUsageCount            Int       @default(0)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model UserKYC {
+  id              String    @id @default(uuid())
+  userId          String    @unique
+  documentation   Boolean   @default(false)
+  identityNumber  String?   @unique
+  identityType    String?
+  dateOfBirth     DateTime?
+  age             Int?
+  gender          String?
+  documentPhoto   String?
+  medicalDocument String?
+
+  // Id verification nested data generalized
+  verifiedAt         DateTime?
+  riskScore          Float     @default(0)
+  riskLevel          String?
+  riskFactors        String[]
+  verificationStatus String    @default("pending") // pending, processing, completed, failed
+
+  // Complex Objects
+  pendingDocuments   Json?
+  kycAttempts        Json?
+  idVerificationData Json?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model AcademicDegree {
+  id               String  @id @default(uuid())
+  userId           String
+  degree           String
+  field            String
+  institution      String
+  graduationYear   Int?
+  certificateImage String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ------------------------------------------------------
+// 2. MEDICAL SERVICE ORDERS
+// ------------------------------------------------------
+
+model ServiceOrder {
+  id                 String   @id @default(uuid())
+  serviceType        String // with_provider, self_service
+  medicalServiceType String // doctor, nursing, pharmacy, hospital, other
+  patientId          String
+  providerId         String?
+  appointmentDate    DateTime
+  duration           Int
+  title              String
+  description        String?
+  urgencyLevel       String   @default("normal")
+  status             String   @default("open")
+  price              Float
+  commission         Float    @default(0)
+  paymentStatus      String   @default("pending")
+  paymentMethod      String   @default("cash")
+  payoutStatus       String   @default("pending")
+
+  // Tracking
+  completion         Json?    // stores complex objects like confirmers, feedback, arrival times
+  cancellation       Json?    // stores reason, actor, etc.
+  withdrawnInterestedIds String[] // IDs of providers who withdrew interest
+
+  // Location
+  meetingLat Float?
+  meetingLng Float?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  patient    User         @relation("PatientOrders", fields: [patientId], references: [id])
+  provider   User?        @relation("ProviderOrders", fields: [providerId], references: [id])
+  offers     OrderOffer[]
+  interested User[]       @relation("InterestedProviders")
+  chatMessages MedicalMessage[]
+}
+
+model OrderOffer {
+  id            String   @id @default(uuid())
+  orderId       String
+  providerId    String
+  proposedPrice Float
+  description   String?
+  status        String   @default("pending")
+  createdAt     DateTime @default(now())
+
+  order    ServiceOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  provider User         @relation(fields: [providerId], references: [id], onDelete: Cascade)
+}
+
+// ------------------------------------------------------
+// 3. SOCIAL (PLOG)
+// ------------------------------------------------------
+
+model Post {
+  id            String   @id @default(uuid())
+  title         String
+  description   String
+  image         String?  @default("https://cdn.pixabay.com/photo/2021/07/02/04/48/user-6380868_1280.png")
+  media         Json?
+  userId        String
+  category      String
+  allowComments Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user     User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  comments Comment[]
+  likes    PostLike[]
+}
+
+model Comment {
+  id        String   @id @default(uuid())
+  text      String
+  postId    String
+  userId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  parentCommentId String?
+  parentComment   Comment?  @relation("CommentReplies", fields: [parentCommentId], references: [id], onDelete: Cascade)
+  replies         Comment[] @relation("CommentReplies")
+
+  likes CommentLike[]
+}
+
+model CommentLike {
+  id        String   @id @default(uuid())
+  commentId String
+  userId    String
+  createdAt DateTime @default(now())
+
+  comment Comment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([commentId, userId])
+}
+
+model PostLike {
+  id           String   @id @default(uuid())
+  postId       String
+  userId       String
+  reactionType String   @default("like") // like, heart, haha, wow, sad, angry
+  createdAt    DateTime @default(now())
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId])
+}
+
+model Friendship {
+  id          String   @id @default(uuid())
+  requesterId String
+  addresseeId String
+  status      String // pending, accepted
+  createdAt   DateTime @default(now())
+
+  requester User @relation("Requester", fields: [requesterId], references: [id], onDelete: Cascade)
+  addressee User @relation("Addressee", fields: [addresseeId], references: [id], onDelete: Cascade)
+
+  @@unique([requesterId, addresseeId])
+}
+
+// ------------------------------------------------------
+// 4. CHAT SYSTEM
+// ------------------------------------------------------
+
+model ChatRoom {
+  id        String   @id @default(uuid())
+  type      String   @default("private") // private, group
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  participants ChatParticipant[]
+  messages     Message[]
+}
+
+model ChatParticipant {
+  id       String   @id @default(uuid())
+  chatId   String
+  userId   String
+  joinedAt DateTime @default(now())
+
+  chat ChatRoom @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  user User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([chatId, userId])
+}
+
+model Message {
+  id         String   @id @default(uuid())
+  text       String?
+  imageUrl   String?
+  chatId     String
+  senderId   String
+  receiverId String? // Optional, primarily used if no direct room model was handled before
+  isRead     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  chat     ChatRoom @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  sender   User     @relation("Sender", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver User?    @relation("Receiver", fields: [receiverId], references: [id], onDelete: Cascade)
+}
+
+model MedicalMessage {
+  id             String   @id @default(uuid())
+  fromId         String
+  toId           String
+  orderId        String
+  message        String
+  messageType    String   @default("text") // text, audio, video, system
+  isRead         Boolean  @default(false)
+  readAt         DateTime?
+  idempotencyKey String?  @unique
+  createdAt      DateTime @default(now())
+
+  from  User         @relation("MedicalMsgSender", fields: [fromId], references: [id], onDelete: Cascade)
+  to    User         @relation("MedicalMsgReceiver", fields: [toId], references: [id], onDelete: Cascade)
+  order ServiceOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+// ------------------------------------------------------
+// 5. E-COMMERCE & CATEGORIES
+// ------------------------------------------------------
+
+model Category {
+  id        String   @id @default(uuid())
+  text      String
+  type      String   @default("blog") // blog, product
+  roles     String[] @default([]) // e.g. ["doctor", "nursing"]
+  userId    String
+  createdAt DateTime @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  products  Product[]
+}
+
+model Product {
+  id               String   @id @default(uuid())
+  name             String
+  description      String
+  price            Float
+  stockQuantity    Int      @default(0)
+  ReservedQuantity Int      @default(0)
+  categoryId       String
+  Address          String?
+  avgRating        Float    @default(0)
+  totalRatings     Int      @default(0)
+  merchantId       String // the merchant/doctor
+  imageUrl         String[] // URLs of images
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  category   Category    @relation(fields: [categoryId], references: [id])
+  merchant   User        @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  orderItems OrderItem[]
+}
+
+model EcommerceOrder {
+  id                 String   @id @default(uuid())
+  userId             String
+  ShippingCompanyId  String?  // Relation to User shipping_company
+  totalAmount        Float
+  orderStatus        String   @default("pending") // mapped from status -> orderStatus
+  paymentStatus      String   @default("pending")
+  paymentMethod      String   @default("card")
+  shippingAddress    String?
+  deliveryDate       DateTime?
+  stripePaymentId    String?
+  merchantTransferId String?
+  shippingTransferId String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  ShippingCompany User?       @relation("ShippingCompany", fields: [ShippingCompanyId], references: [id])
+  user            User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items           OrderItem[]
+}
+
+model OrderItem {
+  id        String @id @default(uuid())
+  orderId   String
+  productId String
+  quantity  Int    @default(1)
+  price     Float // Price at time of purchase
+
+  order   EcommerceOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product        @relation(fields: [productId], references: [id])
+}
+
+model Review {
+  id         String   @id @default(uuid())
+  rating     Int
+  comment    String?
+  userId     String
+  targetId   String // Could be a User (doctor) or a Product id
+  targetType String // "user", "product"
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Contract {
+  id                String   @id @default(uuid())
+  pharmacyId        String
+  shippingCompanyId String
+  status            String   @default("pending") // pending, accepted, rejected, inactive
+  initiatedById     String
+  message           String?
+  businessDetails   Json?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  pharmacy        User @relation("ContractPharmacy", fields: [pharmacyId], references: [id], onDelete: Cascade)
+  shippingCompany User @relation("ContractShippingCompany", fields: [shippingCompanyId], references: [id], onDelete: Cascade)
+  initiatedBy     User @relation("ContractInitiatedBy", fields: [initiatedById], references: [id], onDelete: Cascade)
+
+  @@unique([pharmacyId, shippingCompanyId])
+}
+
+// E-commerce B2B Chat (Pharmacy <-> Shipping Company)
+model EcommerceConversation {
+  id                      String   @id @default(uuid())
+  pharmacyId              String
+  shippingCompanyId       String
+  messageCount            Int      @default(0)
+  isBlockedForNewMessages Boolean  @default(false)
+  lastMessageId           String?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  pharmacy        User                  @relation("ConvPharmacy", fields: [pharmacyId], references: [id], onDelete: Cascade)
+  shippingCompany User                  @relation("ConvShipping", fields: [shippingCompanyId], references: [id], onDelete: Cascade)
+  messages        EcommerceMessage[]
+
+  @@unique([pharmacyId, shippingCompanyId])
+}
+
+model EcommerceMessage {
+  id             String   @id @default(uuid())
+  conversationId String
+  senderId       String
+  text           String
+  createdAt      DateTime @default(now())
+
+  conversation EcommerceConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User                  @relation("EcommerceMsgSender", fields: [senderId], references: [id], onDelete: Cascade)
+}
+
+// ------------------------------------------------------
+// 6. KNOWLEDGE
+// ------------------------------------------------------
+
+model KnowledgeArticle {
+  id        String   @id @default(uuid())
+  title     String
+  content   String
+  source    String   @default("local") // local, wikipedia, openFDA
+  category  String?
+  tags      String[]
+  language  String   @default("ar")
+  authorId  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  author User? @relation(fields: [authorId], references: [id], onDelete: SetNull)
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  type      String   // e.g. "order", "post", "system", "chat"
+  title     String
+  message   String
+  link      String?  // URL/Path to redirect to when clicked
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
