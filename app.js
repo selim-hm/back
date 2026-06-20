@@ -27,31 +27,30 @@ const initializeApp = async () => {
     const academicDegreesRouter = require("./users-core/routes/academicDegrees");
     const reviewRoutes = require("./users-core/routes/reviewRoutes");
 
-    var postsRoute = require("./plog-api/routes/postsRoute");
-    var commentRoute = require("./plog-api/routes/commentRoute");
-    var categoriesRouter = require("./plog-api/routes/categoriesRouter");
-    var adminRouter = require("./plog-api/routes/admin");
 
-    const contractRouter = require("./E-commerce/routes/contractRoutes");
-    const ecommerceChatRouter = require("./E-commerce/routes/chatRoutes");
-    const adminECommerceRouter = require("./E-commerce/routes/admin");
-    const ordersRouter = require("./E-commerce/routes/orders");
-    const productMerchantRouter = require("./E-commerce/routes/productMerchant");
-    const productUserRoutes = require("./E-commerce/routes/productUserRoutes");
+    var postsRoute = require('./plog-api/routes/postsRoute');
+    var commentRoute = require('./plog-api/routes/commentRoute');
+    var categoriesRouter = require('./plog-api/routes/categoriesRouter');
+    var adminRouter = require('./plog-api/routes/admin');
 
-    const knowledgeRouter = require("./knowledge-api/routes/knowledgeRoutes");
+
+    const contractRouter = require('./E-commerce/routes/contractRoutes');
+    const ecommerceChatRouter = require('./E-commerce/routes/chatRoutes');
+    const adminECommerceRouter = require('./E-commerce/routes/admin');
+    const ordersRouter = require('./E-commerce/routes/orders');
+    const productMerchantRouter = require('./E-commerce/routes/productMerchant');
+    const productUserRoutes = require('./E-commerce/routes/productUserRoutes');
+
+
+    const knowledgeRouter = require('./knowledge-api/routes/knowledgeRoutes');
     const notificationRouter = require("./users-core/routes/notification");
     const friendshipRouter = require("./plog-api/routes/friendshipRoutes");
     const socialChatRouter = require("./plog-api/routes/socialChatRoutes");
     const providerRouter = require("./users-core/routes/provider");
 
+
     // securityMiddleware(app);
-    app.use(
-      cors({
-        origin: "*",
-        // methods: ["GET", "POST", "PUT", "DELETE"],
-      }),
-    );
+
 
     app.use("/api/users", usersRouter);
     app.use("/api/forget-password", forgetpassword);
@@ -72,6 +71,7 @@ const initializeApp = async () => {
     app.use("/api/categories", categoriesRouter);
     app.use("/api/admin", adminRouter);
 
+
     app.use("/api/contracts", contractRouter);
     app.use("/api/ecommerce-chat", ecommerceChatRouter);
     app.use("/api/admin-ecommerce", adminECommerceRouter);
@@ -81,6 +81,7 @@ const initializeApp = async () => {
 
     // Knowledge
     app.use("/api/knowledge", knowledgeRouter);
+
 
     app.use(validationErrorHandler);
     app.use(databaseErrorHandler);
